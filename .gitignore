@@ -1,0 +1,8 @@
+node_modules/
+.next/
+.env
+.env.*
+*.log
+.DS_Store
+CLAUDE.md 
+localguard-info.txt
