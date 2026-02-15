@@ -51,6 +51,13 @@ export default function Home() {
               label={node.name}
               apiRoute={node.apiRoute!}
               streamUrl={node.streamUrl!}
+              vlmRoute={
+                node.id === "jetson"
+                  ? "/api/jetson/vlm"
+                  : node.id === "spark"
+                    ? "/api/spark/results/fast"
+                    : undefined
+              }
             />
           ))}
         </div>

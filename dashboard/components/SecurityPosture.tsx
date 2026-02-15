@@ -66,6 +66,9 @@ export default function SecurityPosture() {
   }, []);
 
   const level = snapshot ? LEVEL_STYLES[snapshot.alert_level] : LEVEL_STYLES.low;
+  const deepSummary = snapshot?.sources.spark_deep?.latest_summary;
+  const deepTimestamp = snapshot?.sources.spark_deep?.latest_timestamp;
+  const deepElapsed = snapshot?.sources.spark_deep?.elapsed;
 
   return (
     <section className={`border ${level.border} bg-zinc-900/70 p-4 md:p-5 h-[24rem] overflow-y-auto`}>
@@ -74,22 +77,13 @@ export default function SecurityPosture() {
           <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
             Security Posture
           </h2>
-          <div className="h-10 mt-2">
-            {snapshot ? (
-              <p className="text-sm text-zinc-400 leading-relaxed line-clamp-2">
-                {snapshot.scene_summary}
-              </p>
-            ) : (
-              <p className="text-sm text-zinc-600">Waiting for sensor fusion...</p>
-            )}
-          </div>
         </div>
         <div className={`font-mono text-xs px-2 py-1 rounded shrink-0 ${level.badge}`}>
           {level.label}
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
           <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
             Risk Score
@@ -128,6 +122,37 @@ export default function SecurityPosture() {
         </div>
       </div>
 
+      {/* Deep Analysis — primary narrative from Cosmos-Reason2-8B */}
+      <div className="mt-4 border border-violet-900/40 bg-violet-950/20 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-violet-400">
+            Deep Analysis — Cosmos Reason 8B
+          </p>
+          {deepTimestamp && (
+            <div className="flex items-center gap-2 font-mono text-[10px] text-zinc-600">
+              <span>
+                {new Date(deepTimestamp * 1000).toLocaleTimeString()}
+              </span>
+              {deepElapsed != null && (
+                <span>&middot; {deepElapsed.toFixed(1)}s</span>
+              )}
+            </div>
+          )}
+        </div>
+        {deepSummary ? (
+          <p className="text-sm text-zinc-300 leading-relaxed">
+            {deepSummary}
+          </p>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-violet-600 animate-pulse" />
+            <p className="text-xs text-zinc-600">
+              Waiting for deep analysis...
+            </p>
+          </div>
+        )}
+      </div>
+
       {snapshot && (
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {snapshot.cameras.map((camera) => (
@@ -135,14 +160,9 @@ export default function SecurityPosture() {
               key={camera.id}
               className="border border-zinc-800 bg-zinc-950/50 p-3 flex items-start justify-between gap-3"
             >
-              <div>
-                <p className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  {camera.label}
-                </p>
-                {camera.scene_summary && (
-                  <p className="text-xs text-zinc-500 mt-1">{camera.scene_summary}</p>
-                )}
-              </div>
+              <p className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                {camera.label}
+              </p>
               <div className="text-right shrink-0">
                 <p className="font-mono text-[11px] text-zinc-600">
                   {camera.online ? "Online" : "Offline"}
@@ -153,27 +173,6 @@ export default function SecurityPosture() {
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {snapshot?.sources.spark_deep?.latest_summary && (
-        <div className="mt-4 border border-violet-900/40 bg-violet-950/20 p-3">
-          <p className="font-mono text-[10px] uppercase tracking-wider text-violet-400 mb-2">
-            Deep Analysis
-          </p>
-          <p className="text-xs text-zinc-300 leading-relaxed">
-            {snapshot.sources.spark_deep.latest_summary}
-          </p>
-          <div className="flex items-center gap-2 font-mono text-[10px] text-zinc-600 mt-2">
-            {snapshot.sources.spark_deep.latest_timestamp && (
-              <span>
-                {new Date(snapshot.sources.spark_deep.latest_timestamp * 1000).toLocaleTimeString()}
-              </span>
-            )}
-            {snapshot.sources.spark_deep.elapsed != null && (
-              <span>&middot; {snapshot.sources.spark_deep.elapsed.toFixed(1)}s</span>
-            )}
-          </div>
         </div>
       )}
     </section>

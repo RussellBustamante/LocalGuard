@@ -2,6 +2,7 @@ import {
   JETSON_DETECTIONS_URL,
   JETSON_VLM_RESULTS_URL,
   ORANGEPI_STATUS_URL,
+  SPARK_DETECTIONS_URL,
   SPARK_RESULTS_FAST_URL,
   SPARK_RESULTS_DEEP_URL,
 } from "@/lib/config";
@@ -331,9 +332,14 @@ function emitEvents(snapshot: InsightsSnapshot, latestVoice: VoiceInteraction | 
 }
 
 async function computeInsights(): Promise<InsightsSnapshot> {
-  const [jetson, jetsonVlmResults, sparkFastResults, sparkDeepResults, voiceStatus] = await Promise.all([
+  const [jetson, sparkDetections, jetsonVlmResults, sparkFastResults, sparkDeepResults, voiceStatus] = await Promise.all([
     fetchJsonWithTimeout<DetectionData>(
       JETSON_DETECTIONS_URL,
+      { fps: 0, detections: [] },
+      900
+    ),
+    fetchJsonWithTimeout<DetectionData>(
+      SPARK_DETECTIONS_URL,
       { fps: 0, detections: [] },
       900
     ),
@@ -347,11 +353,43 @@ async function computeInsights(): Promise<InsightsSnapshot> {
     ),
   ]);
 
-  const counts = buildCounts(jetson);
-  const personCount =
-    typeof jetson.person_count === "number" ? jetson.person_count : counts.person ?? 0;
-  const nearestPerson = nearestPersonMeters(jetson);
-  const restricted = restrictedObjects(jetson);
+  // Merge detections from both cameras for unified scoring
+  const jetsonCounts = buildCounts(jetson);
+  const sparkCounts = buildCounts(sparkDetections);
+
+  // Combined counts (sum across cameras)
+  const counts: Record<string, number> = { ...jetsonCounts };
+  for (const [label, count] of Object.entries(sparkCounts)) {
+    counts[label] = (counts[label] ?? 0) + count;
+  }
+
+  const jetsonPersonCount =
+    typeof jetson.person_count === "number" ? jetson.person_count : jetsonCounts.person ?? 0;
+  const sparkPersonCount =
+    typeof sparkDetections.person_count === "number" ? sparkDetections.person_count : sparkCounts.person ?? 0;
+  const personCount = jetsonPersonCount + sparkPersonCount;
+
+  const nearestPerson = nearestPersonMeters(jetson);  // only Jetson has depth
+
+  // Merge restricted objects from both cameras
+  const jetsonRestricted = restrictedObjects(jetson);
+  const sparkRestricted = restrictedObjects(sparkDetections);
+  const restrictedMap = new Map<string, ObjectOfInterest>();
+  for (const obj of [...jetsonRestricted, ...sparkRestricted]) {
+    const existing = restrictedMap.get(obj.label);
+    if (!existing) {
+      restrictedMap.set(obj.label, { ...obj });
+    } else {
+      existing.count += obj.count;
+      existing.max_confidence = Math.max(existing.max_confidence, obj.max_confidence);
+      if (obj.nearest_m != null) {
+        if (existing.nearest_m == null || obj.nearest_m < existing.nearest_m) {
+          existing.nearest_m = obj.nearest_m;
+        }
+      }
+    }
+  }
+  const restricted = [...restrictedMap.values()].sort((a, b) => b.count - a.count);
   const sparkFastLatest = latestSparkResult(sparkFastResults);
   const sparkFastSummary = sparkFastLatest?.output?.trim() ?? "";
   const sparkDeepLatest = latestSparkResult(sparkDeepResults);
@@ -426,13 +464,13 @@ async function computeInsights(): Promise<InsightsSnapshot> {
         id: "jetson",
         label: "Jetson RGB-D",
         online: jetson.fps > 0 || (jetson.detections?.length ?? 0) > 0,
-        person_count: personCount,
+        person_count: jetsonPersonCount,
       },
       {
         id: "spark",
         label: "Spark Scene Cam",
-        online: sparkFastLatest != null,
-        person_count: sparkFastSummary ? estimatePeopleFromText(sparkFastSummary) : 0,
+        online: sparkDetections.fps > 0 || sparkFastLatest != null,
+        person_count: sparkPersonCount,
         scene_summary: truncate(sparkFastSummary || "No scene summary", 120),
       },
     ],

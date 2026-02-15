@@ -2,20 +2,22 @@
 """
 Spark multi-model inference server for LocalGuard.
 
-Runs two VLM inference loops (fast + deep) against two Cosmos-Reason2 models
-served by separate vLLM containers on the same machine.
+Runs YOLO object detection on the AKASO camera, plus two VLM inference loops
+(fast + deep) against Cosmos-Reason2 models served by vLLM containers.
 
 Serves:
-  GET /stream        — live MJPEG feed from AKASO Brave 4
-  GET /results       — combined fast+deep results sorted by timestamp desc
-  GET /results/fast  — fast inference results only
-  GET /results/deep  — deep inference results only
-  GET /health        — health check
+  GET /stream          — live MJPEG feed from AKASO Brave 4 (annotated with YOLO boxes)
+  GET /detections      — JSON YOLO detections (matches Jetson format, no depth_m)
+  GET /results         — combined fast+deep results sorted by timestamp desc
+  GET /results/fast    — fast inference results only
+  GET /results/deep    — deep inference results only
+  GET /health          — health check
 
 Run on the Spark:
   cd ~/cam-inference && source .venv/bin/activate && python3 spark_server.py
 """
 
+import os
 import cv2
 import base64
 import time
@@ -27,6 +29,7 @@ import numpy as np
 from collections import deque
 from flask import Flask, Response, jsonify
 from openai import OpenAI
+from ultralytics import YOLO
 
 app = Flask(__name__)
 
@@ -43,12 +46,18 @@ FAST_VLLM_URL  = "http://localhost:8001/v1"   # Cosmos-2B
 DEEP_VLLM_URL  = "http://localhost:8002/v1"   # Cosmos-8B
 FAST_MODEL     = "cosmos-fast"
 DEEP_MODEL     = "cosmos-deep"
-CAMERA_INDEX   = 0
+CAMERA_INDEX   = int(os.environ.get("CAMERA_INDEX", "1"))
 JETSON_STREAM  = "http://192.168.50.4:8080/stream"
 FAST_INTERVAL  = 1.5   # seconds
 DEEP_INTERVAL  = 20.0  # seconds
 FAST_MAX_TOKENS = 150
 DEEP_MAX_TOKENS = 400
+
+# YOLO config (env-overridable)
+YOLO_MODEL     = os.environ.get("YOLO_MODEL", "yolo11n.pt")  # nano model, auto-downloads
+YOLO_CONF      = float(os.environ.get("YOLO_MIN_CONF", "0.25"))
+YOLO_LABEL_FILTER = os.environ.get("YOLO_LABEL_FILTER", "person")  # "person", "all", or comma-separated
+YOLO_DEVICE    = os.environ.get("YOLO_DEVICE", "0")  # GPU device
 FAST_PROMPT = "Describe what you see in this image. Be concise (2-3 sentences)."
 DEEP_PROMPT = (
     "You are analyzing security camera feeds. Image 1 is the AKASO scene camera. "
@@ -59,11 +68,22 @@ DEEP_PROMPT = (
 
 # --- Shared state ---
 lock = threading.Lock()
-latest_frame = None       # raw JPEG bytes for MJPEG stream
-latest_frame_raw = None   # numpy array for inference (AKASO)
+latest_frame = None       # raw JPEG bytes for MJPEG stream (annotated with YOLO boxes)
+latest_frame_raw = None   # numpy array for inference (AKASO, clean — no overlays)
 latest_jetson_frame = None  # numpy array from Jetson MJPEG
 fast_results = deque(maxlen=5)
 deep_results = deque(maxlen=3)
+
+# YOLO detection state
+yolo_detections = {
+    "fps": 0.0,
+    "timestamp": 0.0,
+    "source": "spark",
+    "counts": {},
+    "person_count": 0,
+    "nearest_person_m": None,
+    "detections": [],
+}
 
 
 def camera_loop():
@@ -83,10 +103,110 @@ def camera_loop():
         if not ret:
             time.sleep(0.1)
             continue
-        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         with lock:
-            latest_frame = buf.tobytes()
             latest_frame_raw = frame
+
+
+def parse_label_filter(filter_str):
+    """Parse YOLO_LABEL_FILTER env into a set of allowed labels or None for all."""
+    if not filter_str or filter_str.strip().lower() in ("all", "*"):
+        return None
+    return set(l.strip().lower() for l in filter_str.split(",") if l.strip())
+
+
+def yolo_detection_loop():
+    """Run YOLO inference on AKASO frames and update detection state."""
+    global yolo_detections
+
+    import torch
+    device = YOLO_DEVICE
+    if device != "cpu" and not torch.cuda.is_available():
+        print(f"WARNING: CUDA not available (torch {torch.__version__}), falling back to CPU for YOLO")
+        device = "cpu"
+
+    print(f"YOLO detection loop starting (model: {YOLO_MODEL}, device: {device}, conf: {YOLO_CONF})")
+    model = YOLO(YOLO_MODEL)
+    allowed_labels = parse_label_filter(YOLO_LABEL_FILTER)
+    print(f"YOLO model loaded. Label filter: {allowed_labels or 'all'}")
+
+    fps_counter = 0
+    fps_timer = time.time()
+    current_fps = 0.0
+
+    while True:
+        with lock:
+            frame = latest_frame_raw
+
+        if frame is None:
+            time.sleep(0.05)
+            continue
+
+        try:
+            results = model(frame, conf=YOLO_CONF, device=device, verbose=False)
+            result = results[0]
+
+            detections = []
+            counts = {}
+            person_count = 0
+
+            for box in result.boxes:
+                cls_id = int(box.cls[0])
+                label = result.names[cls_id]
+                conf = float(box.conf[0])
+                x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
+
+                if allowed_labels is not None and label.lower() not in allowed_labels:
+                    continue
+
+                detections.append({
+                    "label": label,
+                    "confidence": round(conf, 3),
+                    "bbox": [x1, y1, x2, y2],
+                })
+                counts[label] = counts.get(label, 0) + 1
+                if label == "person":
+                    person_count += 1
+
+            # FPS tracking
+            fps_counter += 1
+            elapsed = time.time() - fps_timer
+            if elapsed >= 1.0:
+                current_fps = fps_counter / elapsed
+                fps_counter = 0
+                fps_timer = time.time()
+
+            detection_payload = {
+                "fps": round(current_fps, 1),
+                "timestamp": time.time(),
+                "source": "spark",
+                "counts": counts,
+                "person_count": person_count,
+                "nearest_person_m": None,  # no depth sensor on AKASO
+                "detections": detections,
+            }
+
+            # Draw bounding boxes on the frame for the MJPEG stream
+            annotated = frame.copy()
+            for det in detections:
+                x1, y1, x2, y2 = det["bbox"]
+                color = (0, 255, 0) if det["label"] == "person" else (0, 200, 255)
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+                text = f"{det['label']} {det['confidence']:.2f}"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                cv2.rectangle(annotated, (x1, y1 - th - 6), (x1 + tw, y1), color, -1)
+                cv2.putText(annotated, text, (x1, y1 - 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+
+            _, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+            with lock:
+                global latest_frame
+                latest_frame = buf.tobytes()
+                yolo_detections = detection_payload
+
+        except Exception as e:
+            print(f"YOLO inference error: {e}")
+            time.sleep(0.5)
 
 
 def jetson_snapshot_fetcher():
@@ -315,6 +435,13 @@ def stream():
     )
 
 
+@app.route("/detections")
+def get_detections():
+    with lock:
+        data = dict(yolo_detections)
+    return jsonify(data)
+
+
 @app.route("/results")
 def get_results():
     with lock:
@@ -344,17 +471,20 @@ def health():
         has_jetson = latest_jetson_frame is not None
         n_fast = len(fast_results)
         n_deep = len(deep_results)
+        yolo_fps = yolo_detections.get("fps", 0)
     return jsonify({
         "ok": True,
         "camera": has_frame,
         "jetson_snapshot": has_jetson,
         "fast_results": n_fast,
         "deep_results": n_deep,
+        "yolo_fps": yolo_fps,
     })
 
 
 if __name__ == "__main__":
     threading.Thread(target=camera_loop, daemon=True).start()
+    threading.Thread(target=yolo_detection_loop, daemon=True).start()
     threading.Thread(target=jetson_snapshot_fetcher, daemon=True).start()
     threading.Thread(target=fast_inference_loop, daemon=True).start()
     threading.Thread(target=deep_inference_loop, daemon=True).start()

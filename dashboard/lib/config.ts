@@ -18,12 +18,13 @@ export const JETSON_STREAM_URL = `${JETSON_URL}/stream`;
 export const JETSON_DETECTIONS_URL = `${JETSON_URL}/detections`;
 export const JETSON_VLM_RESULTS_URL = `${JETSON_URL}/vlm_results`;
 
-// DGX Spark — Vision-Language model
+// DGX Spark — YOLO + Vision-Language model
 export const SPARK_URL = envOrDefault(
   "NEXT_PUBLIC_SPARK_URL",
   "http://192.168.50.2:8090"
 );
 export const SPARK_STREAM_URL = `${SPARK_URL}/stream`;
+export const SPARK_DETECTIONS_URL = `${SPARK_URL}/detections`;
 export const SPARK_RESULTS_URL = `${SPARK_URL}/results`;
 export const SPARK_HEALTH_URL = `${SPARK_URL}/health`;
 export const SPARK_RESULTS_FAST_URL = `${SPARK_URL}/results/fast`;
