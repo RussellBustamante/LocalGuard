@@ -99,6 +99,25 @@ export default function VoiceAssistant() {
         </div>
       </div>
 
+      {/* Spark override toggle (not yet wired) */}
+      <div className="border border-zinc-800 bg-zinc-900/30 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[11px] text-zinc-500">
+            Override STT/TTS to DGX Spark
+          </span>
+          <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded">
+            Coming Soon
+          </span>
+        </div>
+        <button
+          disabled
+          className="relative inline-flex h-5 w-9 items-center rounded-full bg-zinc-700 cursor-not-allowed opacity-40"
+          title="Not yet available — requires STT/TTS deployment on Spark"
+        >
+          <span className="inline-block h-3.5 w-3.5 rounded-full bg-zinc-400 translate-x-0.5 transition-transform" />
+        </button>
+      </div>
+
       <div className="border border-zinc-800 bg-zinc-900/50 divide-y divide-zinc-800/50">
         {displayInteractions.length === 0 ? (
           <div className="p-4">

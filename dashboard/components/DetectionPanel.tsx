@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import type { DetectionData, InferenceResult } from "@/lib/types";
+import type { DetectionData } from "@/lib/types";
 
 interface SourceData {
   data: DetectionData | null;
@@ -105,9 +105,6 @@ export default function DetectionPanel() {
     data: null,
     error: false,
   });
-  const [vlm, setVlm] = useState<InferenceResult | null>(null);
-  const [vlmError, setVlmError] = useState(false);
-
   useEffect(() => {
     let active = true;
 
@@ -128,28 +125,8 @@ export default function DetectionPanel() {
       }
     }
 
-    async function pollVlm() {
-      while (active) {
-        try {
-          const res = await fetch("/api/jetson/vlm");
-          const json: InferenceResult[] = await res.json();
-          if (active && json.length > 0) {
-            const latest = json.reduce((a, b) =>
-              b.timestamp > a.timestamp ? b : a
-            );
-            setVlm(latest);
-            setVlmError(false);
-          }
-        } catch {
-          if (active) setVlmError(true);
-        }
-        await new Promise((r) => setTimeout(r, 3000));
-      }
-    }
-
     pollSource("/api/detections", setJetson, 500);
     pollSource("/api/spark/detections", setSpark, 500);
-    pollVlm();
     return () => {
       active = false;
     };
@@ -164,46 +141,6 @@ export default function DetectionPanel() {
       <div className="grid grid-cols-2 gap-3">
         <DetectionSource label="Jetson (D435)" source={jetson} showDepth={true} />
         <DetectionSource label="Spark (AKASO)" source={spark} showDepth={false} />
-      </div>
-
-      {/* Scene Analysis (Jetson VLM) */}
-      <div className="flex flex-col gap-1.5">
-        <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Scene Analysis
-        </h2>
-        <div className="border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-          {vlmError ? (
-            <p className="font-mono text-xs text-zinc-600">VLM unavailable</p>
-          ) : !vlm ? (
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-2 w-2 rounded-full bg-zinc-600 animate-pulse" />
-              <p className="font-mono text-xs text-zinc-600">
-                Waiting for scene analysis...
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <p className="font-mono text-sm leading-relaxed text-zinc-300">
-                {vlm.output}
-              </p>
-              <div className="flex items-center gap-3 mt-1">
-                {vlm.elapsed != null && (
-                  <span className="font-mono text-[10px] text-zinc-600">
-                    {vlm.elapsed}s
-                  </span>
-                )}
-                {vlm.status === "error" && (
-                  <span className="font-mono text-[10px] text-red-500">
-                    error
-                  </span>
-                )}
-                <span className="font-mono text-[10px] text-zinc-700">
-                  {new Date(vlm.timestamp * 1000).toLocaleTimeString()}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
