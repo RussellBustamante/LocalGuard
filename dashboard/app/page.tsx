@@ -1,8 +1,10 @@
 import CameraFeed from "@/components/CameraFeed";
 import Clock from "@/components/Clock";
+import DemoPrompts from "@/components/DemoPrompts";
 import DetectionPanel from "@/components/DetectionPanel";
 import EventTimeline from "@/components/EventTimeline";
 import NodeCard from "@/components/NodeCard";
+import OccupancyTrend from "@/components/OccupancyTrend";
 import SecurityPosture from "@/components/SecurityPosture";
 import SparkInference from "@/components/SparkInference";
 import VoiceAssistant from "@/components/VoiceAssistant";
@@ -41,6 +43,11 @@ export default function Home() {
       {/* Fused security posture */}
       <SecurityPosture />
 
+      {/* Occupancy trend */}
+      <section className="mb-8">
+        <OccupancyTrend />
+      </section>
+
       {/* Observations + Detections + Voice + Timeline */}
       <div className="grid gap-8 lg:grid-cols-4 mb-8">
         <SparkInference />
@@ -64,6 +71,11 @@ export default function Home() {
             />
           ))}
         </div>
+      </section>
+
+      {/* Demo Prompts for Judges */}
+      <section className="mt-8">
+        <DemoPrompts />
       </section>
     </div>
   );

@@ -61,6 +61,10 @@ INSIGHTS_BRIEF_URL = os.getenv(
     "INSIGHTS_BRIEF_URL",
     "http://192.168.50.1:3000/api/insights/brief",
 )
+EVENTS_URL = os.getenv(
+    "EVENTS_URL",
+    "http://192.168.50.1:3000/api/events?limit=1",
+)
 INSIGHTS_TIMEOUT_S = 1.2
 INSIGHTS_CACHE_TTL_S = 2.0
 
@@ -553,12 +557,141 @@ def _record_command(pa, input_device):
         _handle_command(pa, command, output_device)
 
 
+def fetch_structured_context():
+    """Fetch parsed JSON from /api/insights/brief and latest event."""
+    brief = None
+    event = None
+
+    try:
+        with urllib.request.urlopen(INSIGHTS_BRIEF_URL, timeout=INSIGHTS_TIMEOUT_S) as resp:
+            brief = json.loads(resp.read())
+    except Exception:
+        pass
+
+    try:
+        with urllib.request.urlopen(EVENTS_URL, timeout=INSIGHTS_TIMEOUT_S) as resp:
+            data = json.loads(resp.read())
+            events = data.get("events") or []
+            if events:
+                event = events[0]
+    except Exception:
+        pass
+
+    return brief, event
+
+
+# ---------------------------------------------------------------------------
+# Intent router — fast deterministic answers for common demo questions
+# ---------------------------------------------------------------------------
+
+INTENT_PATTERNS = [
+    # (intent_key, list of phrase fragments that trigger it)
+    ("status",            ["status", "what's the status", "system status", "report"]),
+    ("people_count",      ["how many people", "how many persons", "people count", "person count", "occupancy"]),
+    ("nearest_person",    ["nearest person", "closest person", "how close", "how far"]),
+    ("restricted_objects",["restricted object", "any restricted", "dangerous object", "weapon", "knife"]),
+    ("last_event",        ["last event", "latest event", "what happened", "recent event", "most recent"]),
+]
+
+
+def match_intent(command):
+    """Match command text against known intent patterns. Returns intent key or None."""
+    lower = command.lower().strip()
+    for intent_key, phrases in INTENT_PATTERNS:
+        for phrase in phrases:
+            if phrase in lower:
+                return intent_key
+    return None
+
+
+def build_intent_response(intent_key, brief, event):
+    """Build a templated response string for a matched intent."""
+    if intent_key == "status":
+        if not brief:
+            return "I can't reach the dashboard right now. System status unknown."
+        level = brief.get("alert_level", "unknown")
+        risk = brief.get("risk_score", "?")
+        people = brief.get("person_count", 0)
+        nearest = brief.get("nearest_person_m")
+        nearest_str = f"{nearest:.1f} meters" if isinstance(nearest, (int, float)) and nearest is not None else "unknown"
+        return (
+            f"System is at {level} alert, risk score {risk}. "
+            f"{people} {'person' if people == 1 else 'people'} detected, "
+            f"nearest at {nearest_str}."
+        )
+
+    if intent_key == "people_count":
+        if not brief:
+            return "I can't reach the sensors right now."
+        people = brief.get("person_count", 0)
+        return f"There {'is' if people == 1 else 'are'} {people} {'person' if people == 1 else 'people'} detected right now."
+
+    if intent_key == "nearest_person":
+        if not brief:
+            return "Sensor data is unavailable."
+        nearest = brief.get("nearest_person_m")
+        if nearest is None or not isinstance(nearest, (int, float)):
+            return "No person currently detected in range."
+        return f"The nearest person is {nearest:.2f} meters away."
+
+    if intent_key == "restricted_objects":
+        if not brief:
+            return "I can't check right now. Sensor data unavailable."
+        objects = brief.get("objects_of_interest") or []
+        if not objects:
+            return "No restricted objects detected at this time."
+        obj_list = ", ".join(objects[:4])
+        return f"Restricted objects detected: {obj_list}."
+
+    if intent_key == "last_event":
+        if event:
+            msg = event.get("message", "Unknown event")
+            return f"The last event was: {msg}."
+        if brief and brief.get("last_event"):
+            return f"The last event was: {brief['last_event']}."
+        return "No events recorded yet."
+
+    return None
+
+
 def _handle_command(pa, command, output_device):
-    """Send command to LLM and speak the response."""
+    """Handle a voice command — try intent match first, fall back to LLM."""
     if not command:
         return
 
     set_state("thinking")
+    log(f"Command: {command}")
+
+    # --- Intent router: fast deterministic path ---
+    intent_key = match_intent(command)
+    if intent_key:
+        log(f"Intent matched: {intent_key}")
+        t0 = time.time()
+        brief, event = fetch_structured_context()
+        response = build_intent_response(intent_key, brief, event)
+        intent_time = time.time() - t0
+        log(f"Intent response ({intent_time:.2f}s): {response}")
+
+        if response:
+            set_state("speaking")
+            t0 = time.time()
+            wav_bytes = synthesize(response)
+            tts_time = time.time() - t0
+            log(f"TTS ({tts_time:.1f}s)")
+            play_wav(pa, wav_bytes, output_device)
+
+            with lock:
+                interactions.append({
+                    "timestamp": time.time(),
+                    "command": command,
+                    "response": response,
+                    "intent_time": round(intent_time, 2),
+                    "tts_time": round(tts_time, 2),
+                    "source": "intent",
+                })
+            return
+
+    # --- LLM fallback ---
     log(f"Asking LLM: {command}")
     live_context = get_live_context()
     if live_context:
@@ -595,6 +728,7 @@ def _handle_command(pa, command, output_device):
             "response": response,
             "llm_time": round(llm_time, 2),
             "tts_time": round(tts_time, 2),
+            "source": "llm",
         })
 
 
