@@ -23,7 +23,7 @@ const STATE_LABELS: Record<string, { label: string; color: string }> = {
   listening: { label: "Listening", color: "text-emerald-400" },
   recording: { label: "Recording", color: "text-amber-400" },
   thinking: { label: "Thinking", color: "text-blue-400" },
-  speaking: { label: "Speaking", color: "text-purple-400" },
+  speaking: { label: "Speaking", color: "text-cyan-400" },
   offline: { label: "Offline", color: "text-zinc-600" },
 };
 
@@ -32,10 +32,7 @@ export default function VoiceAssistant() {
   const [status, setStatus] = useState<VoiceStatus | null>(null);
 
   useEffect(() => {
-    if (!running) {
-      setStatus(null);
-      return;
-    }
+    if (!running) return;
 
     let active = true;
     async function poll() {

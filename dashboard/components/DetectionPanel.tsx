@@ -33,6 +33,20 @@ export default function DetectionPanel() {
   }, []);
 
   const hasFps = data && data.fps > 0;
+  const counts: Record<string, number> = data?.counts
+    ? data.counts
+    : (data?.detections ?? []).reduce<Record<string, number>>((acc, det) => {
+        acc[det.label] = (acc[det.label] ?? 0) + 1;
+        return acc;
+      }, {});
+  const countRows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const personCount = data?.person_count ?? counts.person ?? 0;
+  const nearestPerson =
+    data?.nearest_person_m ??
+    (data?.detections ?? [])
+      .filter((d) => d.label === "person")
+      .map((d) => d.depth_m)
+      .reduce<number | null>((min, v) => (min == null || v < min ? v : min), null);
 
   return (
     <div className="flex flex-col gap-3">
@@ -47,27 +61,43 @@ export default function DetectionPanel() {
         )}
       </div>
 
+      <div className="grid grid-cols-2 gap-2">
+        <div className="border border-zinc-800 bg-zinc-900/50 px-3 py-2">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            Humans Visible
+          </p>
+          <p className="font-mono text-lg text-zinc-200 mt-1">{personCount}</p>
+        </div>
+        <div className="border border-zinc-800 bg-zinc-900/50 px-3 py-2">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            Nearest Human
+          </p>
+          <p className="font-mono text-lg text-zinc-200 mt-1">
+            {nearestPerson == null ? "n/a" : `${nearestPerson.toFixed(2)}m`}
+          </p>
+        </div>
+      </div>
+
       <div className="border border-zinc-800 bg-zinc-900/50 divide-y divide-zinc-800/50">
         {error ? (
           <p className="p-4 font-mono text-xs text-zinc-600">
             Endpoint unavailable
           </p>
-        ) : !data || data.detections.length === 0 ? (
+        ) : !data || countRows.length === 0 ? (
           <p className="p-4 font-mono text-xs text-zinc-600">
             No objects detected
           </p>
         ) : (
-          data.detections.map((det, i) => (
+          countRows.map(([label, count], i) => (
             <div
-              key={i}
+              key={`${label}-${i}`}
               className="flex items-center justify-between px-4 py-2.5"
             >
               <span className="font-mono text-sm text-zinc-200">
-                {det.label}
+                {label}
               </span>
               <span className="font-mono text-xs text-zinc-500">
-                {(det.confidence * 100).toFixed(0)}% &middot;{" "}
-                {det.depth_m.toFixed(2)}m
+                {count}
               </span>
             </div>
           ))

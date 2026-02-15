@@ -1,29 +1,38 @@
 import type { NodeConfig } from "./types";
+import { JETSON_STREAM_URL, ORANGEPI_URL, SPARK_STREAM_URL } from "./config";
+
+function hostOf(url: string, fallback: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return fallback;
+  }
+}
 
 export const NODES: NodeConfig[] = [
   {
     id: "jetson",
     name: "Jetson Nano",
     role: "Object Detection",
-    ip: "192.168.50.4",
+    ip: hostOf(JETSON_STREAM_URL, "jetson"),
     apiRoute: "/api/jetson",
-    streamUrl: "http://192.168.50.4:8080/stream",
+    streamUrl: JETSON_STREAM_URL,
     capabilities: ["stream", "detections"],
   },
   {
     id: "spark",
     name: "DGX Spark",
     role: "Vision-Language",
-    ip: "192.168.50.2",
+    ip: hostOf(SPARK_STREAM_URL, "spark"),
     apiRoute: "/api/spark",
-    streamUrl: "http://192.168.50.2:8090/stream",
+    streamUrl: SPARK_STREAM_URL,
     capabilities: ["stream", "inference"],
   },
   {
     id: "orangepi",
     name: "Orange Pi",
     role: "Voice Assistant",
-    ip: "192.168.50.3",
+    ip: hostOf(ORANGEPI_URL, "orangepi"),
     apiRoute: "/api/orangepi",
     capabilities: ["voice"],
   },

@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { ORANGEPI_HEALTH_URL } from "@/lib/config";
+import { ORANGEPI_HEALTH_URL, ORANGEPI_URL } from "@/lib/config";
 
 const run = promisify(exec);
-const SSH =
-  "ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ubuntu@192.168.50.3";
+const ORANGEPI_HOST = (() => {
+  try {
+    return new URL(ORANGEPI_URL).hostname;
+  } catch {
+    return "192.168.50.3";
+  }
+})();
+const SSH_TARGET = process.env.ORANGEPI_SSH_TARGET ?? `ubuntu@${ORANGEPI_HOST}`;
+const SSH = `ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ${SSH_TARGET}`;
+const START_CMD =
+  process.env.ORANGEPI_START_CMD ??
+  "cd ~/voice-assistant && source ~/voice-assistant-venv/bin/activate && nohup python3 voice_server.py > /tmp/voice_server.log 2>&1 < /dev/null &";
+const STOP_CMD = process.env.ORANGEPI_STOP_CMD ?? "pkill -f '[p]ython3 voice_server.py'";
 
 async function isReachable(): Promise<boolean> {
   const controller = new AbortController();
@@ -32,9 +43,7 @@ export async function POST(req: Request) {
 
   if (action === "start") {
     try {
-      await run(
-        `${SSH} "cd ~/voice-assistant && source ~/voice-assistant-venv/bin/activate && nohup python3 voice_server.py > /tmp/voice_server.log 2>&1 &"`
-      );
+      await run(`${SSH} -f "${START_CMD}"`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "unknown error";
       return NextResponse.json(
@@ -52,7 +61,7 @@ export async function POST(req: Request) {
 
   if (action === "stop") {
     try {
-      await run(`${SSH} "pkill -f 'python3 voice_server.py'"`);
+      await run(`${SSH} "${STOP_CMD}"`);
     } catch {
       // pkill returns non-zero if no matching process
     }

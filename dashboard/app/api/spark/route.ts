@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { SPARK_HEALTH_URL } from "@/lib/config";
+import { SPARK_HEALTH_URL, SPARK_URL } from "@/lib/config";
 
 const run = promisify(exec);
-const SSH =
-  "ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no asus@192.168.50.2";
+const SPARK_HOST = (() => {
+  try {
+    return new URL(SPARK_URL).hostname;
+  } catch {
+    return "192.168.50.2";
+  }
+})();
+const SSH_TARGET = process.env.SPARK_SSH_TARGET ?? `asus@${SPARK_HOST}`;
+const SSH = `ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ${SSH_TARGET}`;
+const START_CMD =
+  process.env.SPARK_START_CMD ??
+  "cd ~/cam-inference && source .venv/bin/activate && nohup python3 spark_server.py > /tmp/spark_server.log 2>&1 < /dev/null &";
+const STOP_CMD = process.env.SPARK_STOP_CMD ?? "pkill -f '[p]ython3 spark_server.py'";
 
 async function isReachable(): Promise<boolean> {
   const controller = new AbortController();
@@ -32,9 +43,7 @@ export async function POST(req: Request) {
 
   if (action === "start") {
     try {
-      await run(
-        `${SSH} "cd ~/cam-inference && source .venv/bin/activate && nohup python3 spark_server.py > /tmp/spark_server.log 2>&1 &"`
-      );
+      await run(`${SSH} -f "${START_CMD}"`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "unknown error";
       return NextResponse.json(
@@ -53,7 +62,7 @@ export async function POST(req: Request) {
 
   if (action === "stop") {
     try {
-      await run(`${SSH} "pkill -f 'python3 spark_server.py'"`);
+      await run(`${SSH} "${STOP_CMD}"`);
     } catch {
       // pkill returns non-zero if no matching process
     }

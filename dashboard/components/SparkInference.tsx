@@ -9,10 +9,7 @@ export default function SparkInference() {
   const [results, setResults] = useState<InferenceResult[]>([]);
 
   useEffect(() => {
-    if (!running) {
-      setResults([]);
-      return;
-    }
+    if (!running) return;
 
     let active = true;
     async function poll() {

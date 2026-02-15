@@ -43,7 +43,7 @@ INFERENCE_INTERVAL = 2.0  # seconds between inference starts
 lock = threading.Lock()
 latest_frame = None  # raw JPEG bytes for MJPEG stream
 latest_frame_raw = None  # numpy array for inference
-results = deque(maxlen=3)  # list of {id, frame_b64, output, status, timestamp}
+results = deque(maxlen=3)  # list of {id, output, status, timestamp, elapsed}
 
 
 def camera_loop():
@@ -90,7 +90,6 @@ def inference_loop():
         # Create a pending entry
         entry = {
             "id": uuid.uuid4().hex[:8],
-            "frame_b64": b64,
             "output": None,
             "status": "processing",
             "timestamp": time.time(),
@@ -162,12 +161,11 @@ def stream():
 def get_results():
     with lock:
         data = list(results)
-    # Don't send full base64 frames in the results endpoint — send a smaller thumbnail
+    # Keep payload minimal for dashboard and downstream nodes.
     out = []
     for r in data:
         out.append({
             "id": r["id"],
-            "frame_b64": r["frame_b64"],
             "output": r["output"],
             "status": r["status"],
             "timestamp": r["timestamp"],

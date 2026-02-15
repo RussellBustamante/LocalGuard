@@ -1,7 +1,9 @@
 import CameraFeed from "@/components/CameraFeed";
 import Clock from "@/components/Clock";
 import DetectionPanel from "@/components/DetectionPanel";
+import EventTimeline from "@/components/EventTimeline";
 import NodeCard from "@/components/NodeCard";
+import SecurityPosture from "@/components/SecurityPosture";
 import SparkInference from "@/components/SparkInference";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import { NODES } from "@/lib/nodes";
@@ -36,11 +38,15 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Observations + Detections + Voice */}
-      <div className="grid gap-8 lg:grid-cols-3 mb-8">
+      {/* Fused security posture */}
+      <SecurityPosture />
+
+      {/* Observations + Detections + Voice + Timeline */}
+      <div className="grid gap-8 lg:grid-cols-4 mb-8">
         <SparkInference />
         <DetectionPanel />
         <VoiceAssistant />
+        <EventTimeline />
       </div>
 
       {/* Video Feeds */}

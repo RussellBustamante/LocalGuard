@@ -4,8 +4,19 @@ import { promisify } from "util";
 import { JETSON_URL } from "@/lib/config";
 
 const run = promisify(exec);
-const SSH =
-  "ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no antwon@192.168.50.4";
+const JETSON_HOST = (() => {
+  try {
+    return new URL(JETSON_URL).hostname;
+  } catch {
+    return "192.168.50.4";
+  }
+})();
+const SSH_TARGET = process.env.JETSON_SSH_TARGET ?? `antwon@${JETSON_HOST}`;
+const SSH = `ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ${SSH_TARGET}`;
+const START_CMD =
+  process.env.JETSON_START_CMD ??
+  "cd ~/yolo && source .venv/bin/activate && nohup python3 stream.py > /tmp/stream.log 2>&1 < /dev/null &";
+const STOP_CMD = process.env.JETSON_STOP_CMD ?? "pkill -f '[p]ython3 stream.py'";
 
 async function isReachable(): Promise<boolean> {
   const controller = new AbortController();
@@ -29,9 +40,7 @@ export async function POST(req: Request) {
 
   if (action === "start") {
     try {
-      await run(
-        `${SSH} "cd ~/yolo && source .venv/bin/activate && nohup python3 stream.py > /tmp/stream.log 2>&1 &"`
-      );
+      await run(`${SSH} -f "${START_CMD}"`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "unknown error";
       return NextResponse.json(
@@ -50,7 +59,7 @@ export async function POST(req: Request) {
 
   if (action === "stop") {
     try {
-      await run(`${SSH} "pkill -f 'python3 stream.py'"`);
+      await run(`${SSH} "${STOP_CMD}"`);
     } catch {
       // pkill returns non-zero if no matching process
     }

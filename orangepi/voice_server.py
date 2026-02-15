@@ -21,6 +21,7 @@ import os
 import time
 import wave
 import json
+import urllib.request
 import threading
 import subprocess
 import numpy as np
@@ -56,6 +57,12 @@ SYSTEM_PROMPT = (
     "system. Answer concisely in 1-3 sentences. Be direct and helpful. "
     "/no_think"
 )
+INSIGHTS_BRIEF_URL = os.getenv(
+    "INSIGHTS_BRIEF_URL",
+    "http://192.168.50.1:3000/api/insights/brief",
+)
+INSIGHTS_TIMEOUT_S = 1.2
+INSIGHTS_CACHE_TTL_S = 2.0
 
 # Timing
 SILENCE_AFTER_WAKE = 0.8   # seconds of silence before stopping command recording
@@ -70,6 +77,8 @@ assistant_thread = None
 current_state = "idle"  # idle, listening, recording, thinking, speaking
 interactions = deque(maxlen=10)
 llm_server_proc = None
+cached_context = ""
+cached_context_ts = 0.0
 
 # ---------------------------------------------------------------------------
 # Audio helpers
@@ -199,15 +208,64 @@ def synthesize(text):
 # LLM
 # ---------------------------------------------------------------------------
 
-def llm_query(user_text):
+def get_live_context():
+    """Fetch compact fused sensor context from dashboard with short timeout."""
+    global cached_context, cached_context_ts
+
+    now = time.time()
+    if now - cached_context_ts < INSIGHTS_CACHE_TTL_S and cached_context:
+        return cached_context
+
+    try:
+        with urllib.request.urlopen(INSIGHTS_BRIEF_URL, timeout=INSIGHTS_TIMEOUT_S) as resp:
+            data = json.loads(resp.read())
+
+        parts = []
+        level = data.get("alert_level")
+        risk = data.get("risk_score")
+        people = data.get("person_count")
+        nearest = data.get("nearest_person_m")
+        objects = data.get("objects_of_interest") or []
+        scene = (data.get("scene_summary") or "").strip()
+        last_event = (data.get("last_event") or "").strip()
+
+        if level:
+            parts.append(f"level {level}")
+        if isinstance(risk, (int, float)):
+            parts.append(f"risk {int(risk)}")
+        if isinstance(people, (int, float)):
+            parts.append(f"people {int(people)}")
+        if isinstance(nearest, (int, float)):
+            parts.append(f"nearest {nearest:.2f}m")
+        if objects:
+            parts.append(f"objects {','.join(objects[:2])}")
+        if scene:
+            parts.append(f"scene {scene[:90]}")
+        if last_event:
+            parts.append(f"event {last_event[:80]}")
+
+        context = "; ".join(parts)[:260]
+        cached_context = context
+        cached_context_ts = now
+        return context
+    except Exception:
+        return cached_context
+
+
+def llm_query(user_text, live_context=""):
     """Query the local LLM via llama-server HTTP API."""
-    import urllib.request
+    composed_user_text = user_text
+    if live_context:
+        composed_user_text = (
+            f"Live local context: {live_context}\n"
+            f"User request: {user_text}"
+        )
 
     payload = json.dumps({
         "model": LLM_MODEL,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text},
+            {"role": "user", "content": composed_user_text},
         ],
         "max_tokens": 150,
         "temperature": 0.3,
@@ -237,7 +295,6 @@ def start_llm_server():
 
     # Check if already running
     try:
-        import urllib.request
         urllib.request.urlopen("http://127.0.0.1:8081/health", timeout=2)
         log("LLM server already running")
         return
@@ -276,7 +333,6 @@ def start_llm_server():
     for i in range(60):
         time.sleep(1)
         try:
-            import urllib.request
             urllib.request.urlopen("http://127.0.0.1:8081/health", timeout=2)
             log("LLM server ready")
             return
@@ -504,9 +560,12 @@ def _handle_command(pa, command, output_device):
 
     set_state("thinking")
     log(f"Asking LLM: {command}")
+    live_context = get_live_context()
+    if live_context:
+        log(f"Context: {live_context}")
 
     t0 = time.time()
-    response = llm_query(command)
+    response = llm_query(command, live_context)
     llm_time = time.time() - t0
     log(f"LLM response ({llm_time:.1f}s): {response}")
 
