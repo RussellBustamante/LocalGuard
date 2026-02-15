@@ -9,7 +9,7 @@ export default function NodeCard({ node }: { node: NodeConfig }) {
   const hasApi = !!node.apiRoute;
 
   const statusLabel = !hasApi
-    ? "Unconfigured"
+    ? "Node Offline"
     : loading
       ? running
         ? "Stopping..."
@@ -19,7 +19,7 @@ export default function NodeCard({ node }: { node: NodeConfig }) {
         : "Offline";
 
   const statusColor = !hasApi
-    ? "bg-zinc-600"
+    ? "bg-red-500"
     : loading
       ? "bg-amber-500"
       : running
@@ -47,7 +47,7 @@ export default function NodeCard({ node }: { node: NodeConfig }) {
 
       <p className="text-sm text-zinc-500">{node.role}</p>
 
-      {hasApi && (
+      {hasApi ? (
         <button
           onClick={toggle}
           disabled={loading}
@@ -58,6 +58,13 @@ export default function NodeCard({ node }: { node: NodeConfig }) {
           }`}
         >
           {loading ? "..." : running ? "Stop" : "Start"}
+        </button>
+      ) : (
+        <button
+          disabled
+          className="mt-auto font-mono text-xs uppercase tracking-wider px-3 py-1.5 border border-zinc-700 text-zinc-500 opacity-50 cursor-default"
+        >
+          Offline
         </button>
       )}
     </div>

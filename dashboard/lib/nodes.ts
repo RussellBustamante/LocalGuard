@@ -11,13 +11,12 @@ function hostOf(url: string, fallback: string): string {
 
 export const NODES: NodeConfig[] = [
   {
-    id: "jetson",
-    name: "Jetson Nano",
-    role: "Object Detection",
-    ip: hostOf(JETSON_STREAM_URL, "jetson"),
-    apiRoute: "/api/jetson",
-    streamUrl: JETSON_STREAM_URL,
-    capabilities: ["stream", "detections"],
+    id: "orangepi",
+    name: "Orange Pi Plus",
+    role: "Voice Assistant",
+    ip: hostOf(ORANGEPI_URL, "orangepi"),
+    apiRoute: "/api/orangepi",
+    capabilities: ["voice"],
   },
   {
     id: "spark",
@@ -29,12 +28,20 @@ export const NODES: NodeConfig[] = [
     capabilities: ["stream", "inference"],
   },
   {
-    id: "orangepi",
-    name: "Orange Pi",
-    role: "Voice Assistant",
-    ip: hostOf(ORANGEPI_URL, "orangepi"),
-    apiRoute: "/api/orangepi",
-    capabilities: ["voice"],
+    id: "orangepi-max",
+    name: "Orange Pi Max",
+    role: "Reasoning",
+    ip: "192.168.50.5",
+    capabilities: [],
+  },
+  {
+    id: "jetson",
+    name: "Jetson Nano",
+    role: "Object Detection",
+    ip: hostOf(JETSON_STREAM_URL, "jetson"),
+    apiRoute: "/api/jetson",
+    streamUrl: JETSON_STREAM_URL,
+    capabilities: ["stream", "detections"],
   },
 ];
 

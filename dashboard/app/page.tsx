@@ -6,7 +6,6 @@ import EventTimeline from "@/components/EventTimeline";
 import NodeCard from "@/components/NodeCard";
 import OccupancyTrend from "@/components/OccupancyTrend";
 import SecurityPosture from "@/components/SecurityPosture";
-import SparkInference from "@/components/SparkInference";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import { NODES } from "@/lib/nodes";
 
@@ -33,31 +32,15 @@ export default function Home() {
         <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500 mb-3">
           Nodes
         </h2>
-        <div className="bg-zinc-800 grid gap-px sm:grid-cols-3 border border-zinc-800 overflow-hidden">
+        <div className="bg-zinc-800 grid gap-px sm:grid-cols-2 lg:grid-cols-4 border border-zinc-800 overflow-hidden">
           {NODES.map((node) => (
             <NodeCard key={node.id} node={node} />
           ))}
         </div>
       </section>
 
-      {/* Fused security posture */}
-      <SecurityPosture />
-
-      {/* Occupancy trend */}
+      {/* Row 1: Video Feeds side by side */}
       <section className="mb-8">
-        <OccupancyTrend />
-      </section>
-
-      {/* Observations + Detections + Voice + Timeline */}
-      <div className="grid gap-8 lg:grid-cols-4 mb-8">
-        <SparkInference />
-        <DetectionPanel />
-        <VoiceAssistant />
-        <EventTimeline />
-      </div>
-
-      {/* Video Feeds */}
-      <section>
         <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500 mb-3">
           Feeds
         </h2>
@@ -73,10 +56,23 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Demo Prompts for Judges */}
-      <section className="mt-8">
-        <DemoPrompts />
-      </section>
+      {/* Row 2: Security Posture + Occupancy/Detections */}
+      <div className="grid gap-6 lg:grid-cols-2 mb-8">
+        <SecurityPosture />
+        <div className="flex flex-col gap-4">
+          <OccupancyTrend />
+          <DetectionPanel />
+        </div>
+      </div>
+
+      {/* Row 3: Voice + Demo Prompts left, Timeline right */}
+      <div className="grid gap-6 lg:grid-cols-2 mb-8">
+        <div className="flex flex-col gap-4">
+          <VoiceAssistant />
+          <DemoPrompts />
+        </div>
+        <EventTimeline />
+      </div>
     </div>
   );
 }

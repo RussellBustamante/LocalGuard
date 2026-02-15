@@ -68,92 +68,92 @@ export default function SecurityPosture() {
   const level = snapshot ? LEVEL_STYLES[snapshot.alert_level] : LEVEL_STYLES.low;
 
   return (
-    <section className={`border ${level.border} bg-zinc-900/70 p-4 md:p-5 mb-8`}>
+    <section className={`border ${level.border} bg-zinc-900/70 p-4 md:p-5 h-[20rem] overflow-y-auto`}>
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500">
             Security Posture
           </h2>
-          {snapshot ? (
-            <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
-              {snapshot.scene_summary}
-            </p>
-          ) : (
-            <p className="text-sm text-zinc-600 mt-2">Waiting for sensor fusion...</p>
-          )}
+          <div className="h-10 mt-2">
+            {snapshot ? (
+              <p className="text-sm text-zinc-400 leading-relaxed line-clamp-2">
+                {snapshot.scene_summary}
+              </p>
+            ) : (
+              <p className="text-sm text-zinc-600">Waiting for sensor fusion...</p>
+            )}
+          </div>
         </div>
-        <div className={`font-mono text-xs px-2 py-1 rounded ${level.badge}`}>
+        <div className={`font-mono text-xs px-2 py-1 rounded shrink-0 ${level.badge}`}>
           {level.label}
         </div>
       </div>
 
-      {snapshot && (
-        <>
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
-              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-                Risk Score
-              </div>
-              <div className={`font-mono text-lg mt-1 ${level.text}`}>{snapshot.risk_score}</div>
-            </div>
-            <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
-              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-                People
-              </div>
-              <div className="font-mono text-lg mt-1 text-zinc-200">{snapshot.person_count}</div>
-            </div>
-            <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
-              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-                Nearest
-              </div>
-              <div className="font-mono text-lg mt-1 text-zinc-200">
-                {formatDistance(snapshot.nearest_person_m)}
-              </div>
-            </div>
-            <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
-              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-                Objects
-              </div>
-              <div className="font-mono text-lg mt-1 text-zinc-200">
-                {snapshot.objects_of_interest.length}
-              </div>
-            </div>
-            <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
-              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-                Cameras Online
-              </div>
-              <div className="font-mono text-lg mt-1 text-zinc-200">
-                {snapshot.cameras.filter((cam) => cam.online).length}/{snapshot.cameras.length}
-              </div>
-            </div>
+      <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            Risk Score
           </div>
+          <div className={`font-mono text-lg mt-1 ${level.text}`}>{snapshot?.risk_score ?? "—"}</div>
+        </div>
+        <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            People
+          </div>
+          <div className="font-mono text-lg mt-1 text-zinc-200">{snapshot?.person_count ?? "—"}</div>
+        </div>
+        <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            Nearest
+          </div>
+          <div className="font-mono text-lg mt-1 text-zinc-200">
+            {snapshot ? formatDistance(snapshot.nearest_person_m) : "—"}
+          </div>
+        </div>
+        <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            Objects
+          </div>
+          <div className="font-mono text-lg mt-1 text-zinc-200">
+            {snapshot?.objects_of_interest.length ?? "—"}
+          </div>
+        </div>
+        <div className="border border-zinc-800 bg-zinc-950/70 px-3 py-2">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            Cameras Online
+          </div>
+          <div className="font-mono text-lg mt-1 text-zinc-200">
+            {snapshot ? `${snapshot.cameras.filter((cam) => cam.online).length}/${snapshot.cameras.length}` : "—"}
+          </div>
+        </div>
+      </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {snapshot.cameras.map((camera) => (
-              <div
-                key={camera.id}
-                className="border border-zinc-800 bg-zinc-950/50 p-3 flex items-start justify-between gap-3"
-              >
-                <div>
-                  <p className="font-mono text-xs uppercase tracking-wider text-zinc-500">
-                    {camera.label}
-                  </p>
-                  {camera.scene_summary && (
-                    <p className="text-xs text-zinc-500 mt-1">{camera.scene_summary}</p>
-                  )}
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="font-mono text-[11px] text-zinc-600">
-                    {camera.online ? "Online" : "Offline"}
-                  </p>
-                  <p className="font-mono text-xs text-zinc-300 mt-1">
-                    {camera.person_count} people
-                  </p>
-                </div>
+      {snapshot && (
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {snapshot.cameras.map((camera) => (
+            <div
+              key={camera.id}
+              className="border border-zinc-800 bg-zinc-950/50 p-3 flex items-start justify-between gap-3"
+            >
+              <div>
+                <p className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+                  {camera.label}
+                </p>
+                {camera.scene_summary && (
+                  <p className="text-xs text-zinc-500 mt-1">{camera.scene_summary}</p>
+                )}
               </div>
-            ))}
-          </div>
-        </>
+              <div className="text-right shrink-0">
+                <p className="font-mono text-[11px] text-zinc-600">
+                  {camera.online ? "Online" : "Offline"}
+                </p>
+                <p className="font-mono text-xs text-zinc-300 mt-1">
+                  {camera.person_count} people
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </section>
   );
