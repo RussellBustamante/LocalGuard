@@ -32,7 +32,9 @@ deploy_jetson() {
 deploy_spark() {
   echo ">> Deploying spark/spark_server.py → Spark"
   scp $SSH_OPTS "$DIR/spark/spark_server.py" "$SPARK_SSH:$SPARK_REMOTE_FILE"
-  echo "   Restarting spark_server.py..."
+  scp $SSH_OPTS "$DIR/spark/start_vllm.sh" "$SPARK_SSH:~/cam-inference/start_vllm.sh"
+  ssh $SSH_OPTS "$SPARK_SSH" "chmod +x ~/cam-inference/start_vllm.sh"
+  echo "   Restarting spark_server.py (vLLM containers are NOT restarted)..."
   ssh $SSH_OPTS "$SPARK_SSH" "$SPARK_STOP_CMD"
   sleep 1
   ssh $SSH_OPTS -f "$SPARK_SSH" "$SPARK_START_CMD"

@@ -46,7 +46,7 @@ export default function EventTimeline() {
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+      <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
         Timeline
       </h2>
 

@@ -63,7 +63,7 @@ export default function VoiceAssistant() {
   if (!running) {
     return (
       <div className="flex flex-col gap-3">
-        <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Voice Assistant
         </h2>
         <div className="border border-zinc-800 bg-zinc-900/50 p-4">
@@ -78,7 +78,7 @@ export default function VoiceAssistant() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Voice Assistant
         </h2>
         <div className="flex items-center gap-2">

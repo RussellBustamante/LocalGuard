@@ -78,7 +78,7 @@ export default function OccupancyTrend() {
   return (
     <div className="border border-zinc-800 bg-zinc-900/50 p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Occupancy Trend
         </h2>
         <div className="flex gap-3 items-baseline">

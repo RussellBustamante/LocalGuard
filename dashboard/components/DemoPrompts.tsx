@@ -42,7 +42,7 @@ export default function DemoPrompts() {
 
   return (
     <div className="border border-zinc-800 bg-zinc-900/50 p-4">
-      <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500 mb-3">
+      <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">
         Demo Prompts
       </h2>
 

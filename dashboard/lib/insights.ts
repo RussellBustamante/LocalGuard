@@ -1,7 +1,9 @@
 import {
   JETSON_DETECTIONS_URL,
+  JETSON_VLM_RESULTS_URL,
   ORANGEPI_STATUS_URL,
-  SPARK_RESULTS_URL,
+  SPARK_RESULTS_FAST_URL,
+  SPARK_RESULTS_DEEP_URL,
 } from "@/lib/config";
 import type {
   AlertLevel,
@@ -29,7 +31,7 @@ const RESTRICTED_LABELS = new Set([
   "rifle",
 ]);
 
-const SPARK_RISK_KEYWORDS = [
+const VLM_RISK_KEYWORDS = [
   "weapon",
   "knife",
   "gun",
@@ -206,9 +208,9 @@ function estimatePeopleFromText(summary: string): number {
   return 0;
 }
 
-function sparkKeywordRisk(summary: string): number {
+function vlmKeywordRisk(summary: string): number {
   const lower = summary.toLowerCase();
-  return SPARK_RISK_KEYWORDS.some((word) => lower.includes(word)) ? 20 : 0;
+  return VLM_RISK_KEYWORDS.some((word) => lower.includes(word)) ? 20 : 0;
 }
 
 function toAlertLevel(score: number): AlertLevel {
@@ -223,6 +225,8 @@ function buildRiskScore(params: {
   nearestPerson: number | null;
   objectCount: number;
   sparkSummary: string;
+  jetsonVlmSummary: string;
+  deepSummary: string;
 }): number {
   let score = 5;
   score += Math.min(params.personCount * 8, 30);
@@ -234,7 +238,9 @@ function buildRiskScore(params: {
     else if (params.nearestPerson < 3.0) score += 10;
   }
 
-  score += sparkKeywordRisk(params.sparkSummary);
+  score += vlmKeywordRisk(params.sparkSummary);
+  score += vlmKeywordRisk(params.jetsonVlmSummary);
+  score += vlmKeywordRisk(params.deepSummary);
   return Math.min(score, 100);
 }
 
@@ -325,13 +331,15 @@ function emitEvents(snapshot: InsightsSnapshot, latestVoice: VoiceInteraction | 
 }
 
 async function computeInsights(): Promise<InsightsSnapshot> {
-  const [jetson, sparkResults, voiceStatus] = await Promise.all([
+  const [jetson, jetsonVlmResults, sparkFastResults, sparkDeepResults, voiceStatus] = await Promise.all([
     fetchJsonWithTimeout<DetectionData>(
       JETSON_DETECTIONS_URL,
       { fps: 0, detections: [] },
       900
     ),
-    fetchJsonWithTimeout<InferenceResult[]>(SPARK_RESULTS_URL, [], 1300),
+    fetchJsonWithTimeout<InferenceResult[]>(JETSON_VLM_RESULTS_URL, [], 1300),
+    fetchJsonWithTimeout<InferenceResult[]>(SPARK_RESULTS_FAST_URL, [], 1300),
+    fetchJsonWithTimeout<InferenceResult[]>(SPARK_RESULTS_DEEP_URL, [], 1500),
     fetchJsonWithTimeout<VoiceStatusPayload>(
       ORANGEPI_STATUS_URL,
       { state: "offline", running: false, interactions: [] },
@@ -344,16 +352,27 @@ async function computeInsights(): Promise<InsightsSnapshot> {
     typeof jetson.person_count === "number" ? jetson.person_count : counts.person ?? 0;
   const nearestPerson = nearestPersonMeters(jetson);
   const restricted = restrictedObjects(jetson);
-  const sparkLatest = latestSparkResult(sparkResults);
-  const sparkSummary = sparkLatest?.output?.trim() ?? "";
+  const sparkFastLatest = latestSparkResult(sparkFastResults);
+  const sparkFastSummary = sparkFastLatest?.output?.trim() ?? "";
+  const sparkDeepLatest = latestSparkResult(sparkDeepResults);
+  const sparkDeepSummary = sparkDeepLatest?.output?.trim() ?? "";
+  const jetsonVlmLatest = latestSparkResult(jetsonVlmResults);
+  const jetsonVlmSummary = jetsonVlmLatest?.output?.trim() ?? "";
   const latestVoice = latestVoiceInteraction(voiceStatus);
 
   const riskScore = buildRiskScore({
     personCount,
     nearestPerson,
     objectCount: restricted.length,
-    sparkSummary,
+    sparkSummary: sparkFastSummary,
+    jetsonVlmSummary,
+    deepSummary: sparkDeepSummary,
   });
+
+  const summaryParts: string[] = [];
+  if (jetsonVlmSummary) summaryParts.push(`Jetson: ${jetsonVlmSummary}`);
+  if (sparkFastSummary) summaryParts.push(`Spark: ${sparkFastSummary}`);
+  const combinedSummary = summaryParts.join(" | ") || "No scene summary available";
 
   const snapshot: InsightsSnapshot = {
     timestamp: nowSec(),
@@ -362,7 +381,7 @@ async function computeInsights(): Promise<InsightsSnapshot> {
     person_count: personCount,
     nearest_person_m: nearestPerson,
     objects_of_interest: restricted,
-    scene_summary: truncate(sparkSummary || "No scene summary available", 220),
+    scene_summary: truncate(combinedSummary, 220),
     sources: {
       jetson: {
         online: jetson.fps > 0 || (jetson.detections?.length ?? 0) > 0,
@@ -374,12 +393,27 @@ async function computeInsights(): Promise<InsightsSnapshot> {
             ? jetson.timestamp
             : null,
       },
+      jetson_vlm: {
+        online: jetsonVlmLatest != null,
+        latest_result_id: jetsonVlmLatest?.id ?? null,
+        latest_status: jetsonVlmLatest?.status ?? "offline",
+        latest_timestamp: jetsonVlmLatest?.timestamp ?? null,
+        elapsed: jetsonVlmLatest?.elapsed ?? null,
+      },
       spark: {
-        online: sparkLatest != null,
-        latest_result_id: sparkLatest?.id ?? null,
-        latest_status: sparkLatest?.status ?? "offline",
-        latest_timestamp: sparkLatest?.timestamp ?? null,
-        elapsed: sparkLatest?.elapsed ?? null,
+        online: sparkFastLatest != null,
+        latest_result_id: sparkFastLatest?.id ?? null,
+        latest_status: sparkFastLatest?.status ?? "offline",
+        latest_timestamp: sparkFastLatest?.timestamp ?? null,
+        elapsed: sparkFastLatest?.elapsed ?? null,
+      },
+      spark_deep: {
+        online: sparkDeepLatest != null,
+        latest_result_id: sparkDeepLatest?.id ?? null,
+        latest_status: sparkDeepLatest?.status ?? "offline",
+        latest_summary: sparkDeepSummary || null,
+        latest_timestamp: sparkDeepLatest?.timestamp ?? null,
+        elapsed: sparkDeepLatest?.elapsed ?? null,
       },
       voice: {
         online: voiceStatus.running,
@@ -397,9 +431,9 @@ async function computeInsights(): Promise<InsightsSnapshot> {
       {
         id: "spark",
         label: "Spark Scene Cam",
-        online: sparkLatest != null,
-        person_count: sparkSummary ? estimatePeopleFromText(sparkSummary) : 0,
-        scene_summary: truncate(sparkSummary || "No scene summary", 120),
+        online: sparkFastLatest != null,
+        person_count: sparkFastSummary ? estimatePeopleFromText(sparkFastSummary) : 0,
+        scene_summary: truncate(sparkFastSummary || "No scene summary", 120),
       },
     ],
   };
@@ -445,6 +479,7 @@ export async function getInsightsBrief(): Promise<InsightsBrief> {
     objects_of_interest: snapshot.objects_of_interest.map((obj) => obj.label),
     scene_summary: truncate(snapshot.scene_summary, 140),
     last_event: lastEvent,
+    deep_summary: snapshot.sources.spark_deep?.latest_summary ?? null,
   };
 }
 

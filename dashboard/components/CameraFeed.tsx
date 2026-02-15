@@ -46,7 +46,7 @@ export default function CameraFeed({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <h3 className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+        <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
           {label}
         </h3>
       </div>

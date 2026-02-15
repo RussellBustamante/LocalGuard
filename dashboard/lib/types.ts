@@ -32,6 +32,8 @@ export interface InferenceResult {
   status: "processing" | "done" | "error";
   timestamp: number;
   elapsed: number | null;
+  model?: "fast" | "deep";
+  cameras?: string[];
 }
 
 export type AlertLevel = "low" | "guarded" | "elevated" | "critical";
@@ -59,10 +61,25 @@ export interface InsightsSnapshot {
       counts: Record<string, number>;
       timestamp: number | null;
     };
+    jetson_vlm: {
+      online: boolean;
+      latest_result_id: string | null;
+      latest_status: "processing" | "done" | "error" | "offline";
+      latest_timestamp: number | null;
+      elapsed: number | null;
+    };
     spark: {
       online: boolean;
       latest_result_id: string | null;
       latest_status: "processing" | "done" | "error" | "offline";
+      latest_timestamp: number | null;
+      elapsed: number | null;
+    };
+    spark_deep: {
+      online: boolean;
+      latest_result_id: string | null;
+      latest_status: "processing" | "done" | "error" | "offline";
+      latest_summary: string | null;
       latest_timestamp: number | null;
       elapsed: number | null;
     };
@@ -105,4 +122,5 @@ export interface InsightsBrief {
   objects_of_interest: string[];
   scene_summary: string;
   last_event: string | null;
+  deep_summary: string | null;
 }

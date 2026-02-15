@@ -49,13 +49,12 @@ PARAKEET_DIR = os.path.join(MODEL_DIR, "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-in
 VAD_MODEL = os.path.join(MODEL_DIR, "silero_vad.onnx")
 PIPER_VOICE = os.path.join(MODEL_DIR, "piper-voices", "en_US-amy-low.onnx")
 
-# LLM (llama-server OpenAI-compatible API)
-LLM_URL = "http://127.0.0.1:8081/v1/chat/completions"
-LLM_MODEL = "qwen3-1.7b"
+# LLM (OpenAI-compatible API — defaults to remote Nemotron on Spark)
+LLM_URL = os.getenv("LLM_URL", "http://192.168.50.2:8003/v1/chat/completions")
+LLM_MODEL = os.getenv("LLM_MODEL", "nemotron")
 SYSTEM_PROMPT = (
     "You are a security assistant for LocalGuard, a distributed edge AI monitoring "
-    "system. Answer concisely in 1-3 sentences. Be direct and helpful. "
-    "/no_think"
+    "system. Answer concisely in 1-3 sentences. Be direct and helpful."
 )
 INSIGHTS_BRIEF_URL = os.getenv(
     "INSIGHTS_BRIEF_URL",
@@ -281,7 +280,7 @@ def llm_query(user_text, live_context=""):
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=45) as resp:
             data = json.loads(resp.read())
             return data["choices"][0]["message"]["content"].strip()
     except Exception as e:
@@ -294,8 +293,12 @@ def llm_query(user_text, live_context=""):
 # ---------------------------------------------------------------------------
 
 def start_llm_server():
-    """Start llama-server in the background."""
+    """Start llama-server in the background (skipped when using remote LLM)."""
     global llm_server_proc
+
+    if "127.0.0.1" not in LLM_URL and "localhost" not in LLM_URL:
+        log(f"Using remote LLM at {LLM_URL}, skipping local server start")
+        return
 
     # Check if already running
     try:
@@ -347,6 +350,8 @@ def start_llm_server():
 
 def stop_llm_server():
     global llm_server_proc
+    if "127.0.0.1" not in LLM_URL and "localhost" not in LLM_URL:
+        return
     if llm_server_proc:
         llm_server_proc.terminate()
         llm_server_proc.wait(timeout=5)

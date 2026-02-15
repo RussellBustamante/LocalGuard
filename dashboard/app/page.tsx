@@ -29,7 +29,7 @@ export default function Home() {
 
       {/* Node Status Grid */}
       <section className="mb-8">
-        <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500 mb-3">
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">
           Nodes
         </h2>
         <div className="bg-zinc-800 grid gap-px sm:grid-cols-2 lg:grid-cols-4 border border-zinc-800 overflow-hidden">
@@ -41,7 +41,7 @@ export default function Home() {
 
       {/* Row 1: Video Feeds side by side */}
       <section className="mb-8">
-        <h2 className="font-mono text-xs uppercase tracking-wider text-zinc-500 mb-3">
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">
           Feeds
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">

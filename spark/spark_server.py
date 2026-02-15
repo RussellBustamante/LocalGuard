@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-Spark camera + Cosmos-Reason1-7B inference server.
+Spark multi-model inference server for LocalGuard.
+
+Runs two VLM inference loops (fast + deep) against two Cosmos-Reason2 models
+served by separate vLLM containers on the same machine.
 
 Serves:
-  GET /stream   — live MJPEG feed from AKASO Brave 4
-  GET /results  — JSON array of last 3 inference results
-  GET /health   — health check
+  GET /stream        — live MJPEG feed from AKASO Brave 4
+  GET /results       — combined fast+deep results sorted by timestamp desc
+  GET /results/fast  — fast inference results only
+  GET /results/deep  — deep inference results only
+  GET /health        — health check
 
 Run on the Spark:
   cd ~/cam-inference && source .venv/bin/activate && python3 spark_server.py
@@ -17,6 +22,8 @@ import time
 import threading
 import json
 import uuid
+import urllib.request
+import numpy as np
 from collections import deque
 from flask import Flask, Response, jsonify
 from openai import OpenAI
@@ -32,22 +39,35 @@ def add_cors_headers(response):
     return response
 
 # --- Config ---
-VLLM_URL = "http://localhost:8000/v1"
-MODEL = "nvidia/Cosmos-Reason1-7B"
-CAMERA_INDEX = 0
-INFERENCE_PROMPT = "Describe what you see in this image. Be concise (2-3 sentences)."
-MAX_TOKENS = 150
-INFERENCE_INTERVAL = 2.0  # seconds between inference starts
+FAST_VLLM_URL  = "http://localhost:8001/v1"   # Cosmos-2B
+DEEP_VLLM_URL  = "http://localhost:8002/v1"   # Cosmos-8B
+FAST_MODEL     = "cosmos-fast"
+DEEP_MODEL     = "cosmos-deep"
+CAMERA_INDEX   = 0
+JETSON_STREAM  = "http://192.168.50.4:8080/stream"
+FAST_INTERVAL  = 1.5   # seconds
+DEEP_INTERVAL  = 20.0  # seconds
+FAST_MAX_TOKENS = 150
+DEEP_MAX_TOKENS = 400
+FAST_PROMPT = "Describe what you see in this image. Be concise (2-3 sentences)."
+DEEP_PROMPT = (
+    "You are analyzing security camera feeds. Image 1 is the AKASO scene camera. "
+    "Image 2 (if present) is the Jetson depth camera. Provide a temporal security "
+    "assessment: describe activity, any changes, people positions, and potential "
+    "concerns. Be specific and actionable (4-6 sentences)."
+)
 
 # --- Shared state ---
 lock = threading.Lock()
-latest_frame = None  # raw JPEG bytes for MJPEG stream
-latest_frame_raw = None  # numpy array for inference
-results = deque(maxlen=3)  # list of {id, output, status, timestamp, elapsed}
+latest_frame = None       # raw JPEG bytes for MJPEG stream
+latest_frame_raw = None   # numpy array for inference (AKASO)
+latest_jetson_frame = None  # numpy array from Jetson MJPEG
+fast_results = deque(maxlen=5)
+deep_results = deque(maxlen=3)
 
 
 def camera_loop():
-    """Continuously capture frames from the camera."""
+    """Continuously capture frames from the AKASO camera."""
     global latest_frame, latest_frame_raw
     cap = cv2.VideoCapture(CAMERA_INDEX)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -69,13 +89,56 @@ def camera_loop():
             latest_frame_raw = frame
 
 
-def inference_loop():
-    """Periodically grab the latest frame and run inference."""
-    client = OpenAI(base_url=VLLM_URL, api_key="unused")
-    print(f"Inference loop started (model: {MODEL})")
+def jetson_snapshot_fetcher():
+    """Periodically grab a single frame from the Jetson MJPEG stream."""
+    global latest_jetson_frame
+    print(f"Jetson snapshot fetcher started ({JETSON_STREAM})")
 
     while True:
-        time.sleep(INFERENCE_INTERVAL)
+        time.sleep(2.0)
+        try:
+            req = urllib.request.Request(JETSON_STREAM)
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                # Read enough bytes to get one JPEG frame from the MJPEG stream
+                buf = b""
+                while True:
+                    chunk = resp.read(4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    # Look for JPEG end marker
+                    end = buf.find(b"\xff\xd9")
+                    if end != -1:
+                        # Find JPEG start marker
+                        start = buf.find(b"\xff\xd8")
+                        if start != -1 and start < end:
+                            jpeg_data = buf[start:end + 2]
+                            frame = cv2.imdecode(
+                                np.frombuffer(jpeg_data, dtype=np.uint8),
+                                cv2.IMREAD_COLOR,
+                            )
+                            if frame is not None:
+                                with lock:
+                                    latest_jetson_frame = frame
+                        break
+        except Exception as e:
+            # Jetson may be offline — that's fine
+            pass
+
+
+def frame_to_b64(frame, quality=85):
+    """Encode a numpy frame to base64 JPEG string."""
+    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return base64.b64encode(buf).decode("utf-8")
+
+
+def fast_inference_loop():
+    """Run frequent inference on single AKASO frame using Cosmos-2B."""
+    client = OpenAI(base_url=FAST_VLLM_URL, api_key="unused")
+    print(f"Fast inference loop started (model: {FAST_MODEL}, interval: {FAST_INTERVAL}s)")
+
+    while True:
+        time.sleep(FAST_INTERVAL)
 
         with lock:
             frame = latest_frame_raw
@@ -83,26 +146,23 @@ def inference_loop():
         if frame is None:
             continue
 
-        # Encode frame for the API
-        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        b64 = base64.b64encode(buf).decode("utf-8")
+        b64 = frame_to_b64(frame)
 
-        # Create a pending entry
         entry = {
             "id": uuid.uuid4().hex[:8],
             "output": None,
             "status": "processing",
             "timestamp": time.time(),
+            "model": "fast",
         }
 
         with lock:
-            results.append(entry)
+            fast_results.append(entry)
 
-        # Run inference (slow — this is the blocking part)
         try:
             t0 = time.time()
             response = client.chat.completions.create(
-                model=MODEL,
+                model=FAST_MODEL,
                 messages=[
                     {
                         "role": "user",
@@ -113,22 +173,105 @@ def inference_loop():
                                     "url": f"data:image/jpeg;base64,{b64}"
                                 },
                             },
-                            {"type": "text", "text": INFERENCE_PROMPT},
+                            {"type": "text", "text": FAST_PROMPT},
                         ],
                     }
                 ],
-                max_tokens=MAX_TOKENS,
+                max_tokens=FAST_MAX_TOKENS,
             )
             output = response.choices[0].message.content
             elapsed = time.time() - t0
-            print(f"[{time.strftime('%H:%M:%S')}] Inference done in {elapsed:.1f}s")
+            print(f"[{time.strftime('%H:%M:%S')}] Fast inference done in {elapsed:.1f}s")
 
             with lock:
                 entry["output"] = output
                 entry["status"] = "done"
                 entry["elapsed"] = round(elapsed, 1)
         except Exception as e:
-            print(f"Inference error: {e}")
+            print(f"Fast inference error: {e}")
+            with lock:
+                entry["output"] = f"Error: {e}"
+                entry["status"] = "error"
+
+
+def deep_inference_loop():
+    """Run periodic multi-camera inference using Cosmos-8B."""
+    client = OpenAI(base_url=DEEP_VLLM_URL, api_key="unused")
+    print(f"Deep inference loop started (model: {DEEP_MODEL}, interval: {DEEP_INTERVAL}s)")
+
+    while True:
+        time.sleep(DEEP_INTERVAL)
+
+        with lock:
+            akaso_frame = latest_frame_raw
+            jetson_frame = latest_jetson_frame
+
+        if akaso_frame is None and jetson_frame is None:
+            continue
+
+        # Build multi-image content
+        content = []
+        cameras_used = []
+
+        if akaso_frame is not None:
+            content.append({
+                "type": "text",
+                "text": "Image 1 (AKASO scene camera):",
+            })
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{frame_to_b64(akaso_frame)}",
+                },
+            })
+            cameras_used.append("akaso")
+
+        if jetson_frame is not None:
+            img_num = len(cameras_used) + 1
+            content.append({
+                "type": "text",
+                "text": f"Image {img_num} (Jetson depth camera):",
+            })
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{frame_to_b64(jetson_frame)}",
+                },
+            })
+            cameras_used.append("jetson")
+
+        content.append({"type": "text", "text": DEEP_PROMPT})
+
+        entry = {
+            "id": uuid.uuid4().hex[:8],
+            "output": None,
+            "status": "processing",
+            "timestamp": time.time(),
+            "model": "deep",
+            "cameras": cameras_used,
+        }
+
+        with lock:
+            deep_results.append(entry)
+
+        try:
+            t0 = time.time()
+            response = client.chat.completions.create(
+                model=DEEP_MODEL,
+                messages=[{"role": "user", "content": content}],
+                max_tokens=DEEP_MAX_TOKENS,
+            )
+            output = response.choices[0].message.content
+            elapsed = time.time() - t0
+            print(f"[{time.strftime('%H:%M:%S')}] Deep inference done in {elapsed:.1f}s "
+                  f"(cameras: {','.join(cameras_used)})")
+
+            with lock:
+                entry["output"] = output
+                entry["status"] = "done"
+                entry["elapsed"] = round(elapsed, 1)
+        except Exception as e:
+            print(f"Deep inference error: {e}")
             with lock:
                 entry["output"] = f"Error: {e}"
                 entry["status"] = "error"
@@ -149,6 +292,21 @@ def generate_mjpeg():
         time.sleep(0.033)  # ~30fps cap
 
 
+def format_result(r):
+    """Format a result entry for JSON output."""
+    out = {
+        "id": r["id"],
+        "output": r["output"],
+        "status": r["status"],
+        "timestamp": r["timestamp"],
+        "elapsed": r.get("elapsed"),
+        "model": r.get("model"),
+    }
+    if "cameras" in r:
+        out["cameras"] = r["cameras"]
+    return out
+
+
 @app.route("/stream")
 def stream():
     return Response(
@@ -160,30 +318,45 @@ def stream():
 @app.route("/results")
 def get_results():
     with lock:
-        data = list(results)
-    # Keep payload minimal for dashboard and downstream nodes.
-    out = []
-    for r in data:
-        out.append({
-            "id": r["id"],
-            "output": r["output"],
-            "status": r["status"],
-            "timestamp": r["timestamp"],
-            "elapsed": r.get("elapsed"),
-        })
-    return jsonify(out)
+        combined = list(fast_results) + list(deep_results)
+    combined.sort(key=lambda r: r["timestamp"], reverse=True)
+    return jsonify([format_result(r) for r in combined])
+
+
+@app.route("/results/fast")
+def get_results_fast():
+    with lock:
+        data = list(fast_results)
+    return jsonify([format_result(r) for r in data])
+
+
+@app.route("/results/deep")
+def get_results_deep():
+    with lock:
+        data = list(deep_results)
+    return jsonify([format_result(r) for r in data])
 
 
 @app.route("/health")
 def health():
     with lock:
         has_frame = latest_frame is not None
-        n_results = len(results)
-    return jsonify({"ok": True, "camera": has_frame, "results": n_results})
+        has_jetson = latest_jetson_frame is not None
+        n_fast = len(fast_results)
+        n_deep = len(deep_results)
+    return jsonify({
+        "ok": True,
+        "camera": has_frame,
+        "jetson_snapshot": has_jetson,
+        "fast_results": n_fast,
+        "deep_results": n_deep,
+    })
 
 
 if __name__ == "__main__":
     threading.Thread(target=camera_loop, daemon=True).start()
-    threading.Thread(target=inference_loop, daemon=True).start()
+    threading.Thread(target=jetson_snapshot_fetcher, daemon=True).start()
+    threading.Thread(target=fast_inference_loop, daemon=True).start()
+    threading.Thread(target=deep_inference_loop, daemon=True).start()
     print("Starting server on :8090")
     app.run(host="0.0.0.0", port=8090, threaded=True)

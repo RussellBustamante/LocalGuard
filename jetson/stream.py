@@ -2,6 +2,11 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 import os
+import base64
+import uuid
+import json
+import urllib.request
+from collections import deque
 from ultralytics import YOLO
 from flask import Flask, Response, jsonify
 from flask_cors import CORS
@@ -16,6 +21,15 @@ latest_detections = []
 lock = threading.Lock()
 fps_val = 0
 latest_detection_ts = 0.0
+
+# VLM (Moondream via Ollama) config
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "moondream")
+VLM_PROMPT = "Describe what you see in this security camera image. Note any people, activities, or notable objects. Be concise (2-3 sentences)."
+VLM_INTERVAL = float(os.getenv("VLM_INTERVAL", "5.0"))
+
+vlm_results = deque(maxlen=3)
+vlm_lock = threading.Lock()
 
 FILTER_RAW = os.getenv("YOLO_LABEL_FILTER", "person").strip().lower()
 try:
@@ -142,6 +156,68 @@ def index():
 def stream():
     return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
+def vlm_loop():
+    """Background thread: grab latest frame, send to Ollama for VLM inference."""
+    print("VLM inference loop started.")
+    while True:
+        time.sleep(VLM_INTERVAL)
+        with lock:
+            frame = latest_frame
+        if frame is None:
+            continue
+
+        t0 = time.time()
+        result_id = str(uuid.uuid4())[:8]
+        try:
+            _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            img_b64 = base64.b64encode(jpeg.tobytes()).decode("utf-8")
+
+            payload = json.dumps({
+                "model": OLLAMA_MODEL,
+                "prompt": VLM_PROMPT,
+                "images": [img_b64],
+                "stream": False,
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                f"{OLLAMA_URL}/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+
+            elapsed = round(time.time() - t0, 2)
+            entry = {
+                "id": result_id,
+                "output": body.get("response", "").strip(),
+                "status": "done",
+                "timestamp": time.time(),
+                "elapsed": elapsed,
+            }
+        except Exception as exc:
+            elapsed = round(time.time() - t0, 2)
+            entry = {
+                "id": result_id,
+                "output": f"VLM error: {exc}",
+                "status": "error",
+                "timestamp": time.time(),
+                "elapsed": elapsed,
+            }
+
+        with vlm_lock:
+            vlm_results.appendleft(entry)
+        print(f"VLM [{entry['status']}] {elapsed}s: {(entry['output'] or '')[:80]}")
+
+
+@app.route("/vlm_results")
+def vlm_results_endpoint():
+    with vlm_lock:
+        results = list(vlm_results)
+    return jsonify(results)
+
+
 @app.route("/detections")
 def detections():
     with lock:
@@ -172,5 +248,7 @@ def detections():
 if __name__ == "__main__":
     t = threading.Thread(target=yolo_loop, daemon=True)
     t.start()
+    t_vlm = threading.Thread(target=vlm_loop, daemon=True)
+    t_vlm.start()
     print("Stream at http://192.168.50.4:8080")
     app.run(host="0.0.0.0", port=8080, threaded=True)

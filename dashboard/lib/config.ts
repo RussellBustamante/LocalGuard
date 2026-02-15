@@ -16,6 +16,7 @@ export const JETSON_URL = envOrDefault(
 );
 export const JETSON_STREAM_URL = `${JETSON_URL}/stream`;
 export const JETSON_DETECTIONS_URL = `${JETSON_URL}/detections`;
+export const JETSON_VLM_RESULTS_URL = `${JETSON_URL}/vlm_results`;
 
 // DGX Spark — Vision-Language model
 export const SPARK_URL = envOrDefault(
@@ -25,6 +26,8 @@ export const SPARK_URL = envOrDefault(
 export const SPARK_STREAM_URL = `${SPARK_URL}/stream`;
 export const SPARK_RESULTS_URL = `${SPARK_URL}/results`;
 export const SPARK_HEALTH_URL = `${SPARK_URL}/health`;
+export const SPARK_RESULTS_FAST_URL = `${SPARK_URL}/results/fast`;
+export const SPARK_RESULTS_DEEP_URL = `${SPARK_URL}/results/deep`;
 
 // Orange Pi — Voice Assistant
 export const ORANGEPI_URL = envOrDefault(
