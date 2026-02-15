@@ -22,9 +22,10 @@ export const NODES: NodeConfig[] = [
   {
     id: "orangepi",
     name: "Orange Pi",
-    role: "Unassigned",
+    role: "Voice Assistant",
     ip: "192.168.50.3",
-    capabilities: [],
+    apiRoute: "/api/orangepi",
+    capabilities: ["voice"],
   },
 ];
 

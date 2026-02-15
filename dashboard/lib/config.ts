@@ -9,5 +9,7 @@ export const SPARK_STREAM_URL = `${SPARK_URL}/stream`;
 export const SPARK_RESULTS_URL = `${SPARK_URL}/results`;
 export const SPARK_HEALTH_URL = `${SPARK_URL}/health`;
 
-// Orange Pi — TBD
-export const ORANGEPI_URL = "http://192.168.50.3";
+// Orange Pi — Voice Assistant
+export const ORANGEPI_URL = "http://192.168.50.3:8070";
+export const ORANGEPI_HEALTH_URL = `${ORANGEPI_URL}/health`;
+export const ORANGEPI_STATUS_URL = `${ORANGEPI_URL}/status`;

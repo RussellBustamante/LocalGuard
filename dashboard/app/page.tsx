@@ -3,6 +3,7 @@ import Clock from "@/components/Clock";
 import DetectionPanel from "@/components/DetectionPanel";
 import NodeCard from "@/components/NodeCard";
 import SparkInference from "@/components/SparkInference";
+import VoiceAssistant from "@/components/VoiceAssistant";
 import { NODES } from "@/lib/nodes";
 
 export default function Home() {
@@ -35,10 +36,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Observations + Detections */}
-      <div className="grid gap-8 lg:grid-cols-2 mb-8">
+      {/* Observations + Detections + Voice */}
+      <div className="grid gap-8 lg:grid-cols-3 mb-8">
         <SparkInference />
         <DetectionPanel />
+        <VoiceAssistant />
       </div>
 
       {/* Video Feeds */}

@@ -5,7 +5,7 @@ export interface NodeConfig {
   ip: string;
   apiRoute?: string;
   streamUrl?: string;
-  capabilities: ("stream" | "detections" | "inference")[];
+  capabilities: ("stream" | "detections" | "inference" | "voice")[];
 }
 
 export interface Detection {
